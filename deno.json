@@ -1,0 +1,10 @@
+{
+  "name": "react-webpack-decompiler",
+  "version": "1.0.0",
+  "tasks": {
+    "main": "npx rimraf ./app && deno run --allow-net --allow-write --allow-sys --allow-read --allow-env src/main.ts"
+  },
+  "imports": {
+    "@std/assert": "jsr:@std/assert@1"
+  }
+}
