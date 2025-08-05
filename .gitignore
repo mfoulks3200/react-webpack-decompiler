@@ -1,3 +1,5 @@
 /.cache
 /app
 .DS_Store
+/src/test
+*.log

@@ -4,6 +4,7 @@ import { fetchCode } from "../Utilities.ts";
 
 import { Cache } from "../Cache.ts";
 import { WebpackModule } from "./WebpackModule.ts";
+import { Logger } from "../Logger.ts";
 
 export class WebpackChunk {
   public static chunks: WebpackChunk[] = [];
@@ -29,7 +30,7 @@ export class WebpackChunk {
     if (chunkCode) {
       this.code = chunkCode;
     } else {
-      console.error("Chunk could not be downloaded, skipping...");
+      Logger.error("Chunk could not be downloaded, skipping...");
     }
   }
 
@@ -55,7 +56,7 @@ export class WebpackChunk {
             )
           );
         } catch (e) {
-          console.error("Failed to register module ", this.serialize(), e);
+          Logger.error("Failed to register module ", this.serialize(), e);
         }
       }
     }

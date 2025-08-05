@@ -2,12 +2,13 @@ import { SyntaxKind } from "npm:ts-morph";
 import { WebpackModule } from "../WebpackModule.ts";
 import { Transformation } from "./Transformation.ts";
 import path from "node:path";
+import { Logger } from "../../Logger.ts";
 
 export const ImportsDecompile: Transformation = {
-  name: "RefactorModuleInit",
+  name: "ImportsDecompile",
 
   canBeApplied: async (mod: WebpackModule): Promise<boolean> => {
-    return true;
+    return mod.moduleType === "TSX";
   },
 
   apply: async (mod: WebpackModule): Promise<boolean> => {
@@ -24,7 +25,8 @@ export const ImportsDecompile: Transformation = {
           if (
             expression
               .getDescendantsOfKind(SyntaxKind.Identifier)[0]
-              .getText() === WebpackModule.specialFunctions.require
+              .getText() === WebpackModule.specialFunctions.require &&
+            expression.getArguments().length > 0
           ) {
             const modId = expression.getArguments()[0].getText();
             const modLookup = WebpackModule.getModule(modId);
@@ -54,7 +56,7 @@ export const ImportsDecompile: Transformation = {
           }
         }
       } catch (e) {
-        console.error(mod.id, e);
+        Logger.error(mod.id, e);
       }
     }
     return true;

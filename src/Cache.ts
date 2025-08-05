@@ -2,6 +2,7 @@ import { tryMkDirSync } from "./Utilities.ts";
 import path from "node:path";
 import { encodeHex } from "jsr:@std/encoding/hex";
 import fs from "node:fs";
+import { Logger } from "./Logger.ts";
 
 interface CacheItem<T> {
   uuid: string;
@@ -48,7 +49,7 @@ export class Cache {
           });
           existingNamespaces.add(item.namespace);
         } else {
-          console.log("Missing namespace", item.namespace);
+          // Logger.log("Missing namespace", item.namespace);
         }
       }
     } else {
@@ -86,10 +87,9 @@ export class Cache {
         return existing.content;
       }
     } else {
-      const content =
-        typeof fallback === "function"
-          ? await (fallback as Function)()
-          : fallback;
+      const content = await (typeof fallback === "function"
+        ? await (fallback as Function)()
+        : fallback);
       if (content) {
         Cache.add(options, serializer ? await serializer(content) : content);
       }

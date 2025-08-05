@@ -4,6 +4,7 @@
     "jsr:@std/encoding@*": "1.0.10",
     "npm:@poppinss/cliui@*": "6.4.4",
     "npm:@types/node@*": "22.12.0",
+    "npm:callsites@*": "4.2.0",
     "npm:chalk@*": "5.4.1",
     "npm:dom-parser@*": "1.1.5",
     "npm:multi-progress-bars@*": "5.0.3",
@@ -100,6 +101,9 @@
       "dependencies": [
         "fill-range"
       ]
+    },
+    "callsites@4.2.0": {
+      "integrity": "sha512-kfzR4zzQtAE9PC7CzZsjl3aBNbXWuXiSeOCdLcPpBfGW8YuCqQHcRPFDbr/BPVmd3EEPVpuFzLyuT/cUhPr4OQ=="
     },
     "chalk@5.4.1": {
       "integrity": "sha512-zgVZuo2WcZgfUEmsn6eO3kINexW8RAE4maiQ8QNs8CtpPCSyMiYsULR3HQYkm3w8FIA3SberyMJMSldGsW+U3w=="

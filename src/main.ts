@@ -1,6 +1,7 @@
 import { Cache } from "./Cache.ts";
 import chalk from "npm:chalk";
 import { MultiProgressBars } from "npm:multi-progress-bars";
+import AppTSConfig from "./AppTSConfig.ts";
 
 import {
   analyzeManifest,
@@ -13,20 +14,21 @@ import {
   WebpackModule,
 } from "./webpack/WebpackModule.ts";
 import { tryMkDirSync } from "./Utilities.ts";
+import { Logger } from "./Logger.ts";
 
-console.log(chalk.white("⚙️  Starting Webpack Decompiler..."));
+Logger.log(chalk.white("⚙️  Starting Webpack Decompiler..."));
 await Cache.initialize();
 
 // const url = "https://trello.com/b/8STvXz9Q/house-closing";
 const url = "https://www.duolingo.com/learn";
 
-console.log(chalk.white(`🔎 Attempting to find Webpack Manifest at ${url}`));
+Logger.log(chalk.white(`🔎 Attempting to find Webpack Manifest at ${url}`));
 const manifestScript = await findWebpackManifestScript(url);
 if (!manifestScript) {
-  console.error(`Could not find Webpack Manifest at ${url}`);
+  Logger.error(`Could not find Webpack Manifest at ${url}`);
   Deno.exit(0);
 }
-console.log(
+Logger.log(
   chalk.white(
     `✅ Found webpack manifest ${
       manifestScript.url === "local"
@@ -36,7 +38,7 @@ console.log(
   )
 );
 
-console.log(chalk.white(`🧱 Building chunk names`));
+Logger.log(chalk.white(`🧱 Building chunk names`));
 export const baseUrl =
   "https://" +
   new URL(manifestScript.url === "local" ? url : manifestScript.url).host;
@@ -53,7 +55,7 @@ mpb.addTask("Extracting chunks", { type: "indefinite" });
 mpb.addTask("Registering chunks", { type: "percentage" });
 mpb.addTask("Unpacking Modules", { type: "percentage" });
 for (const transform of ModuleTransformationChain) {
-  mpb.addTask(`Run module transform "${transform.name}"`, {
+  mpb.addTask(`Run module transform "${transform.transformer.name}"`, {
     type: "percentage",
   });
 }
@@ -67,6 +69,9 @@ mpb.done("Extracting chunks", { message: "Build finished." });
 await (async () => {
   let i = 0;
   for (const jsChunk of jsChunks) {
+    if (i > 10) {
+      break;
+    }
     await WebpackChunk.registerChunk(
       jsChunk.id,
       jsChunk.remotePath,
@@ -103,19 +108,20 @@ await (async () => {
 
 // Transformers
 for (const transform of ModuleTransformationChain) {
+  const transformer = transform.transformer;
   await (async () => {
+    Logger.log(`Starting transformer ${transformer.name}`);
     let i = 0;
     for (const mod of WebpackModule.modules) {
-      await mod.runTransform(transform);
-      await mod.updateCache();
-      mpb.updateTask(`Run module transform "${transform.name}"`, {
+      await mod.runTransform(transformer);
+      mpb.updateTask(`Run module transform "${transformer.name}"`, {
         percentage: i / WebpackModule.modules.length,
-        message: `[${i}/${WebpackModule.modules.length}] Running transform "${transform.name}" on module ${mod.id} chunk ${mod.chunk.id}`,
+        message: `[${i}/${WebpackModule.modules.length}] Running transform "${transformer.name}" on module ${mod.id} chunk ${mod.chunk.id}`,
       });
       i++;
     }
-    mpb.done(`Run module transform "${transform.name}"`, {
-      message: `Module transform "${transform.name}" complete.`,
+    mpb.done(`Run module transform "${transformer.name}"`, {
+      message: `Module transform "${transformer.name}" complete.`,
     });
   })();
 }
@@ -135,5 +141,9 @@ await (async () => {
     });
     i++;
   }
+  Deno.writeTextFileSync(
+    "app/tsconfig.json",
+    JSON.stringify(AppTSConfig, null, 2)
+  );
   mpb.done("Bake project", { message: "Files baked." });
 })();

@@ -6,50 +6,49 @@ import {
 import { WebpackModule } from "../WebpackModule.ts";
 import { Transformation } from "./Transformation.ts";
 import path from "node:path";
+import { Logger } from "../../Logger.ts";
 
 export const ConvertJsonModule: Transformation = {
   name: "ConvertJsonModule",
 
   canBeApplied: async (mod: WebpackModule): Promise<boolean> => {
-    return true;
+    return mod.moduleType === "TSX";
   },
 
   apply: async (mod: WebpackModule): Promise<boolean> => {
-    const expression = mod.moduleSourceFile!.getChildrenOfKind(
+    if (!mod.moduleSourceFile) {
+      return false;
+    }
+    const binExps = mod.moduleSourceFile.getDescendantsOfKind(
       SyntaxKind.BinaryExpression
-    )?.[0];
-    if (expression) {
-      const varName = expression.getChildrenOfKind(
-        SyntaxKind.PropertyAccessExpression
-      )?.[0];
-      if (
-        varName &&
-        varName.getText().trim() ===
-          `${WebpackModule.specialFunctions.module}.exports` &&
-        expression.getChildrenOfKind(SyntaxKind.EqualsToken).length == 1
-      ) {
-        const jsonExpression = expression.getChildrenOfKind(
-          SyntaxKind.CallExpression
-        )?.[0];
+    );
+    if (binExps && binExps.length > 0) {
+      for (const binExp of binExps) {
         if (
-          jsonExpression &&
-          jsonExpression.getChildrenOfKind(SyntaxKind.PropertyAccessExpression)
-            .length == 1 &&
-          jsonExpression
-            .getChildrenOfKind(SyntaxKind.PropertyAccessExpression)[0]
-            .getText()
-            .trim() === "JSON.parse"
+          !binExp.wasForgotten() &&
+          binExp.getChildCount() === 3 &&
+          binExp.getChildAtIndex(0).getText() ===
+            WebpackModule.specialFunctions.module + ".exports" &&
+          binExp.getChildAtIndex(1).getKind() === SyntaxKind.EqualsToken &&
+          binExp.getChildAtIndex(2).getText().startsWith("JSON.parse(")
         ) {
-          const jsonContent = jsonExpression
-            .getChildrenOfKind(SyntaxKind.StringLiteral)[0]
+          const rawJson = binExp
+            .getChildAtIndex(2)
+            .getDescendantsOfKind(SyntaxKind.StringLiteral)[0]
             .getText()
-            .slice(1, -2);
+            .slice(1, -1)
+            .replaceAll("\\", "");
           mod.moduleType = "FILE";
-          mod.setCode(JSON.stringify(JSON.parse(jsonContent), null, 2));
           mod.currentLocation = path.join(
-            "chunk-" + mod.chunk.id,
+            path.dirname(mod.currentLocation),
+            "assets",
             `module-${mod.id}.json`
           );
+          try {
+            mod.setCode(JSON.stringify(JSON.parse(rawJson), null, 2));
+          } catch (e) {
+            mod.setCode(rawJson);
+          }
         }
       }
     }

@@ -6,7 +6,20 @@ export const RefactorModuleInit: Transformation = {
   name: "RefactorModuleInit",
 
   canBeApplied: async (mod: WebpackModule): Promise<boolean> => {
-    return true;
+    if (!mod.moduleSourceFile) {
+      return false;
+    }
+    const exportAssigns = mod.moduleSourceFile.getDescendantsOfKind(
+      SyntaxKind.ExportAssignment
+    );
+    return (
+      exportAssigns.length > 0 &&
+      exportAssigns[0].getDescendantsOfKind(SyntaxKind.ArrowFunction).length >
+        0 &&
+      exportAssigns[0]
+        .getDescendantsOfKind(SyntaxKind.ArrowFunction)[0]
+        .getParameters().length > 0
+    );
   },
 
   apply: async (mod: WebpackModule): Promise<boolean> => {

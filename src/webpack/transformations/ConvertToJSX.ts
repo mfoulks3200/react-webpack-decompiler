@@ -16,7 +16,10 @@ export const ConvertToJSX: Transformation = {
       const expressionName = expressionCall
         .getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)?.[0]
         ?.getFullText();
-      if ((expressionName ?? "").trim().endsWith(`.createElement`.trim())) {
+      if (
+        (expressionName ?? "").trim().endsWith(`.createElement`.trim()) &&
+        expressionCall.getArguments().length > 0
+      ) {
         //Identify React import
         expressionCall
           .getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)?.[0]
@@ -42,7 +45,7 @@ export const ConvertToJSX: Transformation = {
             .getChildrenOfKind(SyntaxKind.PropertyAssignment)) {
             if (
               property.getChildren().length > 0 &&
-              property.getChildrenOfKind(SyntaxKind.Identifier).length >= 1
+              property.getChildrenOfKind(SyntaxKind.Identifier).length > 2
             ) {
               elementAttrs.push({
                 key: property

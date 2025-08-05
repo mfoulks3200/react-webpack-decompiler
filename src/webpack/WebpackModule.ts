@@ -13,17 +13,27 @@ import { ConvertFileModule } from "./transformations/ConvertFileModule.ts";
 
 import { ImportsDecompile } from "./transformations/ImportsDecompile.ts";
 import { RefactorModuleInit } from "./transformations/RefactorModuleInit.ts";
+import { ReplaceDefaultSymbol } from "./transformations/ReplaceDefaultSymbol.ts";
+import { Logger } from "../Logger.ts";
+import { tryMkDirSync } from "../Utilities.ts";
+import chalk from "npm:chalk";
+import { UnfurlOptionalChain } from "./transformations/UnfurlOptionalChain.ts";
 
 export type ModuleType = "TSX" | "FILE";
 
-export const ModuleTransformationChain: Transformation[] = [
-  RefactorModuleInit,
-  ExportsDecompile,
-  ConvertToJSX,
-  //   AddHeaderComment,
-  ConvertJsonModule,
-  ConvertFileModule,
-  ImportsDecompile,
+export const ModuleTransformationChain: {
+  suid: number;
+  transformer: Transformation;
+}[] = [
+  { suid: 1, transformer: RefactorModuleInit },
+  { suid: 1, transformer: ExportsDecompile },
+  { suid: 1, transformer: ReplaceDefaultSymbol },
+  { suid: 1, transformer: UnfurlOptionalChain },
+  { suid: 1, transformer: ConvertToJSX },
+  // { suid: 1, transformer: AddHeaderComment },
+  { suid: 1, transformer: ConvertJsonModule },
+  { suid: 1, transformer: ConvertFileModule },
+  { suid: 1, transformer: ImportsDecompile },
 ];
 
 export class WebpackModule {
@@ -86,32 +96,53 @@ export class WebpackModule {
       formattedCode,
       { overwrite: true }
     );
-
-    // Format Code
-    try {
-      this.moduleSourceFile.replaceWithText(
-        await formatCode(this.moduleSourceFile.getFullText())
-      );
-    } catch (e) {
-      console.error(this.id, e);
-    }
   }
 
   public async runTransform(transform: Transformation) {
     try {
-      if (
-        (await transform.canBeApplied(this)) &&
-        !this.transformations.includes(transform.name)
-      ) {
-        await transform.apply(this);
-        this.transformations.push(transform.name);
-        if (this.moduleType === "TSX") {
-          this.code = this.moduleSourceFile?.getFullText() ?? this.code;
+      // deno-lint-ignore no-this-alias
+      const thisMod: WebpackModule = this;
+      let wasCached = true;
+      const transformedCode = await Cache.get(
+        {
+          namespace: `Transformer-${transform.name}`,
+          id: await Cache.hash({
+            id: this.id,
+            chunk: this.chunk.id,
+            name: transform.name,
+            beforeCode: this.code,
+          }),
+        },
+        async () => {
+          wasCached = false;
+          if (
+            (await transform.canBeApplied(thisMod)) &&
+            !thisMod.transformations.includes(transform.name)
+          ) {
+            await transform.apply(thisMod);
+            if (this.moduleType === "TSX") {
+              this.code = this.moduleSourceFile?.getFullText() ?? this.code;
+            }
+          }
+          return {
+            code: thisMod.code,
+            currentLocation: thisMod.currentLocation,
+            moduleType: thisMod.moduleType,
+          };
         }
+      );
+      this.transformations.push(transform.name);
+      this.code = transformedCode.code;
+      if (this.moduleType === "TSX") {
+        this.moduleSourceFile?.replaceWithText(this.code);
       }
+      this.currentLocation = transformedCode.currentLocation;
+      this.moduleType = transformedCode.moduleType;
     } catch (e) {
-      console.error(
-        `Failed transformation ${transform.name} on module ${this.id} chunk ${this.chunk.id}`
+      Logger.error(
+        chalk.red(`[${transform.name}]`),
+        `Failed transformation ${transform.name} on module ${this.id} chunk ${this.chunk.id}`,
+        e
       );
     }
   }
@@ -142,21 +173,8 @@ export class WebpackModule {
     }
   }
 
-  public async updateCache() {
-    await Cache.add(
-      {
-        namespace: "WebpackModule",
-        id: await Cache.hash({
-          id: this.id,
-          parent: this.chunk.id,
-          code: this.code,
-        }),
-      },
-      JSON.stringify(this.serialize())
-    );
-  }
-
   public bakeFile() {
+    tryMkDirSync(path.dirname(path.join("app", this.currentLocation)));
     Deno.writeTextFileSync(path.join("app", this.currentLocation), this.code);
   }
 

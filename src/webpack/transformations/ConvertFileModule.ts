@@ -9,7 +9,7 @@ export const ConvertFileModule: Transformation = {
   name: "ConvertFileModule",
 
   canBeApplied: async (mod: WebpackModule): Promise<boolean> => {
-    return true;
+    return mod.moduleType === "TSX";
   },
 
   apply: async (mod: WebpackModule): Promise<boolean> => {
@@ -36,16 +36,13 @@ export const ConvertFileModule: Transformation = {
         );
         mod.currentLocation = path.join(
           path.dirname(mod.currentLocation),
+          "assets",
           path
             .basename(mod.currentLocation)
             .slice(0, -1 * path.extname(mod.currentLocation).length) +
             path.extname(fileUrl)
         );
-        tryMkDirSync(path.dirname(mod.currentLocation));
-        Deno.writeTextFileSync(
-          mod.currentLocation,
-          (await fetchCode(fileUrl, true)) ?? ""
-        );
+        mod.setCode(await fetchCode(fileUrl, true));
       }
     }
     return true;

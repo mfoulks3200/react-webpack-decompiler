@@ -5,7 +5,7 @@ export const AddHeaderComment: Transformation = {
   name: "AddHeaderComment",
 
   canBeApplied: async (mod: WebpackModule): Promise<boolean> => {
-    return true;
+    return mod.moduleType === "TSX";
   },
 
   apply: async (mod: WebpackModule): Promise<boolean> => {

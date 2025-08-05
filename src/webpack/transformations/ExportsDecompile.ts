@@ -1,6 +1,7 @@
 import { ExpressionStatement, SyntaxKind } from "npm:ts-morph";
 import { WebpackModule } from "../WebpackModule.ts";
 import { Transformation } from "./Transformation.ts";
+import { Logger } from "../../Logger.ts";
 
 export const ExportsDecompile: Transformation = {
   name: "ExportsDecompile",
@@ -32,6 +33,12 @@ export const ExportsDecompile: Transformation = {
             .getDescendantsOfKind(SyntaxKind.ObjectLiteralExpression)?.[0]
             .getChildrenOfKind(SyntaxKind.PropertyAssignment)
             .map((child) => {
+              if (
+                child.wasForgotten() ||
+                child.getChildrenOfKind(SyntaxKind.Identifier).length === 0
+              ) {
+                return undefined;
+              }
               const name = child
                 .getChildrenOfKind(SyntaxKind.Identifier)[0]
                 .getText();
@@ -56,31 +63,41 @@ export const ExportsDecompile: Transformation = {
               }
               return `${value} as ${name}`;
             })
+            .filter((item) => item !== undefined)
+            .filter((item) => item !== "default")
         );
         try {
           expressionsToRemove.push(
             expressionCall.getParent() as ExpressionStatement
           );
-        } catch (e) {}
+        } catch (e) {
+          Logger.error(e);
+        }
       }
     }
     try {
       if (newExportDecls.length > 0) {
-        mod.moduleSourceFile!.addExportDeclaration({
+        mod.moduleSourceFile!.insertExportDeclaration(0, {
           namedExports: newExportDecls,
         });
         for (const expressionToRemove of expressionsToRemove) {
           let parent = expressionToRemove;
-          while (parent?.getKind() !== SyntaxKind.ExpressionStatement) {
+          while (
+            !parent?.wasForgotten() &&
+            parent?.getKind() !== SyntaxKind.ExpressionStatement
+          ) {
             parent = parent.getParent()! as ExpressionStatement;
           }
-          if (parent?.getKind() === SyntaxKind.ExpressionStatement) {
+          if (
+            !parent.wasForgotten() &&
+            parent?.getKind() === SyntaxKind.ExpressionStatement
+          ) {
             (parent as ExpressionStatement).remove();
           }
         }
       }
     } catch (e) {
-      console.error(mod.id, e);
+      Logger.error(mod.id, e);
     }
     return true;
   },
