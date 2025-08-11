@@ -9,16 +9,17 @@ export const UnfurlOptionalChain: Transformation = {
   },
 
   apply: async (mod: WebpackModule): Promise<boolean> => {
-    if (!mod.moduleSourceFile) {
+    const sourceFile = mod.getSourceFileAST();
+    if (!sourceFile) {
       return false;
     }
-    const expressions = mod.moduleSourceFile.getDescendantsOfKind(
-      SyntaxKind.ParenthesizedExpression
+    const expressions = sourceFile.getDescendantsOfKind(
+      SyntaxKind.ParenthesizedExpression,
     );
     if (expressions.length > 0) {
       for (const expression of expressions) {
         const binExp = expression.getChildrenOfKind(
-          SyntaxKind.BinaryExpression
+          SyntaxKind.BinaryExpression,
         );
         if (
           binExp.length > 0 &&
@@ -30,6 +31,20 @@ export const UnfurlOptionalChain: Transformation = {
         }
       }
     }
+
+    //Convert !1 to false
+    const unaryExps = sourceFile.getDescendantsOfKind(
+      SyntaxKind.PrefixUnaryExpression,
+    );
+    if (unaryExps.length > 0) {
+      for (const unaryExp of unaryExps) {
+        if (unaryExp.getText() === "!1") {
+          unaryExp.replaceWithText("false");
+        }
+      }
+    }
+
+    mod.setCode(sourceFile.getFullText());
     return true;
   },
 };

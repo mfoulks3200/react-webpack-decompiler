@@ -11,10 +11,11 @@ export const ExportsDecompile: Transformation = {
   },
 
   apply: async (mod: WebpackModule): Promise<boolean> => {
+    const sourceFile = mod.getSourceFileAST();
     const newExportDecls: string[] = [];
     const expressionsToRemove: ExpressionStatement[] = [];
-    for (const expressionCall of mod.moduleSourceFile!.getDescendantsOfKind(
-      SyntaxKind.CallExpression
+    for (const expressionCall of sourceFile.getDescendantsOfKind(
+      SyntaxKind.CallExpression,
     )) {
       if (expressionCall.wasForgotten()) {
         continue;
@@ -64,12 +65,14 @@ export const ExportsDecompile: Transformation = {
               return `${value} as ${name}`;
             })
             .filter((item) => item !== undefined)
-            .filter((item) => item !== "default")
+            .filter((item) => item !== "default"),
         );
         try {
-          expressionsToRemove.push(
-            expressionCall.getParent() as ExpressionStatement
-          );
+          if (expressionCall) {
+            expressionsToRemove.push(
+              expressionCall.getParent() as ExpressionStatement,
+            );
+          }
         } catch (e) {
           Logger.error(e);
         }
@@ -77,7 +80,7 @@ export const ExportsDecompile: Transformation = {
     }
     try {
       if (newExportDecls.length > 0) {
-        mod.moduleSourceFile!.insertExportDeclaration(0, {
+        sourceFile.insertExportDeclaration(0, {
           namedExports: newExportDecls,
         });
         for (const expressionToRemove of expressionsToRemove) {
@@ -99,6 +102,7 @@ export const ExportsDecompile: Transformation = {
     } catch (e) {
       Logger.error(mod.id, e);
     }
+    mod.setCode(sourceFile.getFullText());
     return true;
   },
 };

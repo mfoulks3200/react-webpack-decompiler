@@ -36,7 +36,7 @@ export class WebpackChunk {
 
   public async extractModules() {
     const regex =
-      /^\s{4}(?<moduleId>[0-9]*): (?<moduleCode>(?:(?:.|\n)(?!\n\s{4}},?))*.\n\s{4}\})/gm;
+      /^\s{4}"?(?<moduleId>(?:[0-9]*|[^"]*))"?: (?<moduleCode>(?:(?:.|\n)(?!\n\s{4}},?))*.\n\s{4}\})/gm;
 
     let m;
     while ((m = regex.exec(this.code)) !== null) {
@@ -50,7 +50,10 @@ export class WebpackChunk {
         try {
           this.modules.push(
             await WebpackModule.registerModule(
-              m.groups["moduleId"],
+              m.groups["moduleId"]
+                .replaceAll("node_modules/", "")
+                .replaceAll("./", "")
+                .replaceAll("/", "-"),
               this,
               rawCode
             )

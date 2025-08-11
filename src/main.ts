@@ -15,10 +15,12 @@ import {
 } from "./webpack/WebpackModule.ts";
 import { tryMkDirSync } from "./Utilities.ts";
 import { Logger } from "./Logger.ts";
+import { CSSChunk } from "./webpack/CSSChunk.ts";
 
 Logger.log(chalk.white("⚙️  Starting Webpack Decompiler..."));
 await Cache.initialize();
 
+// const url = "https://www.airbnb.com/";
 // const url = "https://trello.com/b/8STvXz9Q/house-closing";
 const url = "https://www.duolingo.com/learn";
 
@@ -39,9 +41,6 @@ Logger.log(
 );
 
 Logger.log(chalk.white(`🧱 Building chunk names`));
-export const baseUrl =
-  "https://" +
-  new URL(manifestScript.url === "local" ? url : manifestScript.url).host;
 
 const mpb = new MultiProgressBars({
   initMessage: " $ React Webpack Decompiler ",
@@ -50,9 +49,13 @@ const mpb = new MultiProgressBars({
   border: true,
 });
 
-let jsChunks: Awaited<ReturnType<typeof analyzeManifest>> = [];
+let chunks: Awaited<ReturnType<typeof analyzeManifest>> = {
+  jsChunks: [],
+  cssChunks: [],
+};
 mpb.addTask("Extracting chunks", { type: "indefinite" });
-mpb.addTask("Registering chunks", { type: "percentage" });
+mpb.addTask("Registering CSS chunks", { type: "percentage" });
+mpb.addTask("Registering JS/TS chunks", { type: "percentage" });
 mpb.addTask("Unpacking Modules", { type: "percentage" });
 for (const transform of ModuleTransformationChain) {
   mpb.addTask(`Run module transform "${transform.transformer.name}"`, {
@@ -62,14 +65,40 @@ for (const transform of ModuleTransformationChain) {
 mpb.addTask("Bake project", { type: "percentage" });
 
 // Extracting chunks
-jsChunks = await analyzeManifest(baseUrl, manifestScript.content);
+chunks = await analyzeManifest(url, manifestScript.content);
+Logger.log(`Found ${chunks.jsChunks.length} chunks`);
 mpb.done("Extracting chunks", { message: "Build finished." });
 
-// Registering chunks
+const chunkLimit = 10;
+
+// Registering css chunks
+Logger.log(chalk.white(`🗂️ Registering CSS Chunks`));
 await (async () => {
   let i = 0;
-  for (const jsChunk of jsChunks) {
-    if (i > 10) {
+  for (const cssChunk of chunks.cssChunks) {
+    await CSSChunk.registerChunk(
+      cssChunk.id,
+      cssChunk.remotePath,
+      cssChunk.url
+    );
+    mpb.updateTask("Registering CSS chunks", {
+      percentage: i / chunks.cssChunks.length,
+      message: `[${i}/${chunks.cssChunks.length}] Downloading chunk ${
+        cssChunk.id
+      } (${path.basename(cssChunk.remotePath).replace(/\.[^/.]+$/, "")})`,
+    });
+    i++;
+  }
+  mpb.done("Registering CSS chunks", { message: "Chunks registered." });
+})();
+
+// Registering js/ts chunks
+Logger.log(chalk.white(`🗂️ Registering JS/TS Chunks`));
+await (async () => {
+  let i = 0;
+  for (const jsChunk of chunks.jsChunks) {
+    if (i > chunkLimit && chunkLimit > 0) {
+      Logger.log(`Chunk processing limited to ${chunkLimit}`);
       break;
     }
     await WebpackChunk.registerChunk(
@@ -77,18 +106,19 @@ await (async () => {
       jsChunk.remotePath,
       jsChunk.url
     );
-    mpb.updateTask("Registering chunks", {
-      percentage: i / jsChunks.length,
-      message: `[${i}/${jsChunks.length}] Downloading chunk ${
+    mpb.updateTask("Registering JS/TS chunks", {
+      percentage: i / chunks.jsChunks.length,
+      message: `[${i}/${chunks.jsChunks.length}] Downloading chunk ${
         jsChunk.id
       } (${path.basename(jsChunk.remotePath).replace(/\.[^/.]+$/, "")})`,
     });
     i++;
   }
-  mpb.done("Registering chunks", { message: "Chunks registered." });
+  mpb.done("Registering JS/TS chunks", { message: "Chunks registered." });
 })();
 
 // Unpacking Modules
+Logger.log(chalk.white(`📦 Unpacking modules`));
 await (async () => {
   let i = 0;
   for (const chunk of WebpackChunk.chunks) {
@@ -107,10 +137,12 @@ await (async () => {
 })();
 
 // Transformers
+Logger.log(chalk.white(`🚀 Starting transformers`));
 for (const transform of ModuleTransformationChain) {
   const transformer = transform.transformer;
   await (async () => {
     Logger.log(`Starting transformer ${transformer.name}`);
+    const startTime = Date.now();
     let i = 0;
     for (const mod of WebpackModule.modules) {
       await mod.runTransform(transformer);
@@ -121,23 +153,37 @@ for (const transform of ModuleTransformationChain) {
       i++;
     }
     mpb.done(`Run module transform "${transformer.name}"`, {
-      message: `Module transform "${transformer.name}" complete.`,
+      message: `Module transform "${transformer.name}" complete. (${(
+        (Date.now() - startTime) /
+        1000
+      ).toFixed(2)} seconds)`,
     });
   })();
 }
 
 // Bake project
+Logger.log(chalk.white(`🍰 Baking project`));
 await (async () => {
   tryMkDirSync("app");
+  tryMkDirSync("app/css-modules");
   for (const chunk of WebpackChunk.chunks) {
     tryMkDirSync(path.join("app", `chunk-${chunk.id}`));
   }
+  const totalModules = WebpackModule.modules.length + CSSChunk.chunks.length;
   let i = 0;
   for (const mod of WebpackModule.modules) {
-    mod.bakeFile();
+    await mod.bakeFile();
     mpb.updateTask("Bake project", {
-      percentage: i / WebpackModule.modules.length,
-      message: `[${i}/${WebpackModule.modules.length}] Baking module ${mod.id} chunk ${mod.chunk.id}`,
+      percentage: i / totalModules,
+      message: `[${i}/${totalModules}] Baking module ${mod.id} chunk ${mod.chunk.id}`,
+    });
+    i++;
+  }
+  for (const cssChunk of CSSChunk.chunks) {
+    await cssChunk.bakeFile();
+    mpb.updateTask("Bake project", {
+      percentage: i / totalModules,
+      message: `[${i}/${totalModules}] Baking CSS module ${cssChunk.id}`,
     });
     i++;
   }

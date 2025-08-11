@@ -3,7 +3,22 @@ import fs from "node:fs";
 import path from "node:path";
 import callsites from "npm:callsites";
 
+const startedAt = Date.now();
+
+globalThis.addEventListener("unload", () => {
+  Logger.log(
+    `Finished in ${((Date.now() - startedAt) / 1000).toFixed(2)} seconds, ${
+      Logger.messageStats.error
+    } error(s)`
+  );
+});
+
 export class Logger {
+  public static messageStats = {
+    info: 0,
+    error: 0,
+  };
+
   private static renderMessage(...message: any) {
     const renderedMessage = [];
     for (const part of message) {
@@ -54,6 +69,7 @@ export class Logger {
       "output.log",
       Logger.sanitizeString(renderedMessage.join(" ") + "\n")
     );
+    Logger.messageStats.info++;
   }
 
   public static error(...message: any) {
@@ -69,5 +85,6 @@ export class Logger {
       "output.log",
       Logger.sanitizeString(renderedMessage.join(" ") + "\n")
     );
+    Logger.messageStats.error++;
   }
 }

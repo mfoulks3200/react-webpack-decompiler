@@ -3,7 +3,7 @@ import { WebpackModule } from "../WebpackModule.ts";
 import { Transformation } from "./Transformation.ts";
 import { fetchCode, tryMkDirSync } from "../../Utilities.ts";
 import { SyntaxKind } from "npm:ts-morph";
-import { baseUrl } from "../../main.ts";
+import { getBaseUrl } from "../WebpackUtilities.ts";
 
 export const ConvertFileModule: Transformation = {
   name: "ConvertFileModule",
@@ -13,7 +13,8 @@ export const ConvertFileModule: Transformation = {
   },
 
   apply: async (mod: WebpackModule): Promise<boolean> => {
-    for (const binExp of mod.moduleSourceFile!.getDescendantsOfKind(
+    const sourceFile = mod.getSourceFileAST();
+    for (const binExp of sourceFile.getDescendantsOfKind(
       SyntaxKind.BinaryExpression
     )) {
       if (
@@ -27,7 +28,7 @@ export const ConvertFileModule: Transformation = {
       ) {
         mod.moduleType = "FILE";
         const fileUrl = path.join(
-          baseUrl,
+          getBaseUrl(),
           binExp
             .getDescendantsOfKind(SyntaxKind.BinaryExpression)[0]!
             .getDescendantsOfKind(SyntaxKind.StringLiteral)[0]
@@ -45,6 +46,7 @@ export const ConvertFileModule: Transformation = {
         mod.setCode(await fetchCode(fileUrl, true));
       }
     }
+    mod.setCode(sourceFile.getFullText());
     return true;
   },
 };

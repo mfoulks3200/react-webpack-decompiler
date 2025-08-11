@@ -2,6 +2,8 @@ import path from "node:path";
 import { fetchCode } from "../Utilities.ts";
 import { DOMParser } from "https://deno.land/x/deno_dom/deno-dom-wasm.ts";
 import { WebpackChunk } from "./WebpackChunk.ts";
+import { Logger } from "../Logger.ts";
+import { formatCode } from "../Prettier.ts";
 
 export const findWebpackManifestScript = async (url: string) => {
   const urlObj = new URL(url);
@@ -37,7 +39,15 @@ export const findWebpackManifestScript = async (url: string) => {
 };
 
 export const extractRawJSChunks = (code: string) => {
-  const regex = /^\s*\(t.u = \(e\) =>(?:(?:.|\n)(?!\),))*.\)/gm;
+  const regex = /^\s*\(t\.u = \([a-zA-Z]\) =>(?:(?:.|\n)(?!\),))*.\)/gm;
+
+  const m = regex.exec(code);
+
+  return m ? m[0] : null;
+};
+
+export const extractRawCssChunks = (code: string) => {
+  const regex = /^\s*\(t\.miniCssF = \([a-zA-Z]\) =>(?:(?:.|\n)(?!\),))*.\)/gm;
 
   const m = regex.exec(code);
 
@@ -95,10 +105,40 @@ export const buildChunkNameParts = (baseUrl: string, code: string) => {
   return modules;
 };
 
-export const analyzeManifest = async (baseUrl: string, code: string) => {
-  const rawJSChunks = extractRawJSChunks(code);
+let currentBaseUrl = "";
+
+export const getBaseUrl = () => currentBaseUrl;
+
+export const findBaseUrl = (code: string) => {
+  const regex = /^\s*\(t.p = "([^"]*)"\)/gm;
+
+  const m = regex.exec(code);
+  if (m?.[1]) {
+    const foundUrl = m?.[1];
+    if (foundUrl.startsWith("http")) {
+      currentBaseUrl = m?.[1];
+    } else {
+      const tempUrl = new URL(currentBaseUrl);
+      tempUrl.pathname = m?.[1];
+      currentBaseUrl = tempUrl.toString();
+    }
+  }
+  return currentBaseUrl;
+};
+
+export const analyzeManifest = async (backupUrl: string, code: string) => {
+  currentBaseUrl = backupUrl;
+  const formattedCode = await formatCode(code);
+  const rawJSChunks = extractRawJSChunks(formattedCode);
+  const baseUrl = findBaseUrl(formattedCode);
   const jsChunks = buildChunkNameParts(baseUrl, rawJSChunks ?? "");
-  return jsChunks;
+
+  const rawCssChunks = extractRawCssChunks(formattedCode);
+  const cssChunks = buildChunkNameParts(baseUrl, rawCssChunks ?? "");
+
+  Deno.writeTextFileSync("test.json", JSON.stringify(cssChunks, null, 2));
+
+  return { jsChunks, cssChunks };
 
   //   Deno.writeTextFileSync(
   //     "app/chunkManifest.json",

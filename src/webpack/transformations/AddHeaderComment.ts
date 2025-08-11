@@ -9,16 +9,17 @@ export const AddHeaderComment: Transformation = {
   },
 
   apply: async (mod: WebpackModule): Promise<boolean> => {
+    const sourceFile = mod.getSourceFileAST();
     const headerCommentRegex =
       /^\/\*\*\n\s?\* START DECOMPILER DATA((?:(?:.|\n)(?!\* END DECOMPILER DATA))*)\n\s?\* END DECOMPILER DATA\n\s?\*\//gm;
-    const currentContent = mod.moduleSourceFile!.getFullText();
+    const currentContent = sourceFile.getFullText();
     if (currentContent.match(headerCommentRegex)) {
-      mod.moduleSourceFile!.replaceWithText(
-        currentContent.replaceAll(headerCommentRegex, "")
+      sourceFile.replaceWithText(
+        currentContent.replaceAll(headerCommentRegex, ""),
       );
-      await mod.moduleSourceFile!.save();
+      await sourceFile.save();
     }
-    mod.moduleSourceFile!.insertText(0, (writer) =>
+    sourceFile.insertText(0, (writer) =>
       writer.writeLine(
         `/**
             * START DECOMPILER DATA
@@ -30,17 +31,18 @@ export const AddHeaderComment: Transformation = {
                 moduleId: mod.id,
               },
               null,
-              2
+              2,
             )
               .split("\n")
               .join("\n * ")}
             * Decompiler Module Data (Do Not Edit): ${btoa(
-              JSON.stringify(mod.serialize())
+              JSON.stringify(mod.serialize()),
             )}
             * END DECOMPILER DATA
-            */`.replaceAll(/^\s*/gm, "")
-      )
+            */`.replaceAll(/^\s*/gm, ""),
+      ),
     );
+    mod.setCode(sourceFile.getFullText());
     return true;
   },
 };

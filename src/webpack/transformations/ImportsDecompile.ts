@@ -12,12 +12,14 @@ export const ImportsDecompile: Transformation = {
   },
 
   apply: async (mod: WebpackModule): Promise<boolean> => {
-    for (const varDecl of mod.moduleSourceFile!.getVariableDeclarations()) {
+    const sourceFile = mod.getSourceFileAST();
+    for (const varDecl of sourceFile.getVariableDeclarations()) {
       try {
         if (
           varDecl.getChildren().length >= 2 &&
           varDecl.getChildren()[1].getKindName() === "EqualsToken" &&
-          varDecl.getChildren()[2].getKindName() === "CallExpression"
+          varDecl.getChildren()[2].getKindName() === "CallExpression" &&
+          !varDecl.wasForgotten()
         ) {
           const expression = varDecl.getDescendantsOfKind(
             SyntaxKind.CallExpression
@@ -40,14 +42,14 @@ export const ImportsDecompile: Transformation = {
               }
               modPath.push(path.basename(modLookup.currentLocation));
               const modPathStr = path.join(...modPath);
-              mod.moduleSourceFile!.addImportDeclaration({
+              sourceFile.addImportDeclaration({
                 namespaceImport: varDecl.getName(),
                 moduleSpecifier:
                   (modPathStr.startsWith(".") ? "" : "./") + modPathStr,
               });
             } else {
-              const moduleSpecifier = `../modules/module-${modId}.tsx`;
-              mod.moduleSourceFile!.addImportDeclaration({
+              const moduleSpecifier = "../" + mod.currentLocation;
+              sourceFile.addImportDeclaration({
                 namespaceImport: varDecl.getName(),
                 moduleSpecifier,
               });
@@ -55,10 +57,36 @@ export const ImportsDecompile: Transformation = {
             varDecl.remove();
           }
         }
+
+        // Statically imported files
+        if (
+          varDecl.getChildCount() > 3 &&
+          varDecl.getChildAtIndexIfKind(2, SyntaxKind.BinaryExpression) &&
+          !varDecl.wasForgotten()
+        ) {
+          const binExp = varDecl.getChildAtIndexIfKind(
+            2,
+            SyntaxKind.BinaryExpression
+          );
+          if (
+            binExp!
+              .getText()
+              .startsWith(`${WebpackModule.specialFunctions.require}.p +`) &&
+            binExp!.getChildCount() === 3 &&
+            binExp!.getChildAtIndexIfKind(2, SyntaxKind.StringLiteral)
+          ) {
+            const importString = binExp!
+              .getChildAtIndexIfKind(2, SyntaxKind.StringLiteral)!
+              .getFullText()
+              .slice(1, -1);
+            Logger.log("Found import", importString);
+          }
+        }
       } catch (e) {
         Logger.error(mod.id, e);
       }
     }
+    mod.setCode(sourceFile.getFullText());
     return true;
   },
 };

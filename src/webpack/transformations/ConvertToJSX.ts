@@ -1,6 +1,9 @@
 import { SyntaxKind } from "npm:ts-morph";
 import { WebpackModule } from "../WebpackModule.ts";
 import { Transformation } from "./Transformation.ts";
+import { Logger } from "../../Logger.ts";
+
+const reactFunctions = [".createElement"];
 
 export const ConvertToJSX: Transformation = {
   name: "ConvertToJSX",
@@ -10,21 +13,19 @@ export const ConvertToJSX: Transformation = {
   },
 
   apply: async (mod: WebpackModule): Promise<boolean> => {
-    for (const expressionCall of mod
-      .moduleSourceFile!.getDescendantsOfKind(SyntaxKind.CallExpression)
+    const sourceFile = mod.getSourceFileAST();
+    for (const expressionCall of sourceFile
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
       .toReversed()) {
       const expressionName = expressionCall
         .getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)?.[0]
         ?.getFullText();
       if (
-        (expressionName ?? "").trim().endsWith(`.createElement`.trim()) &&
+        reactFunctions.some((funcName) =>
+          (expressionName ?? "").trim().endsWith(funcName.trim()),
+        ) &&
         expressionCall.getArguments().length > 0
       ) {
-        //Identify React import
-        expressionCall
-          .getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)?.[0]
-          .getChildrenOfKind(SyntaxKind.Identifier)[0]
-          .rename("React");
         const elementName =
           expressionCall.getArguments()?.[0].getKind() ===
           SyntaxKind.StringLiteral
@@ -79,12 +80,13 @@ export const ConvertToJSX: Transformation = {
         const elementCode =
           elementChildren.length > 0
             ? `<${elementStartTag}>${elementChildren.join(
-                "\n"
+                "\n",
               )}</${elementName}>`
             : `<${elementStartTag} />`;
         expressionCall.replaceWithText(elementCode);
       }
     }
+    mod.setCode(sourceFile.getFullText());
     return true;
   },
 };

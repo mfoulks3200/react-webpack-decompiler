@@ -2,12 +2,13 @@
   "name": "react-webpack-decompiler",
   "version": "1.0.0",
   "tasks": {
-    "soft-cache-clear": "npx rimraf ./app && npx rimraf ./.cache/Transformer-* && npx rimraf ./.cache/WebpackChunk && npx rimraf ./.cache/WebpackModule",
+    "soft-cache-clear": "npx rimraf ./app && npx rimraf ./.cache/Transformer-* && npx rimraf ./.cache/WebpackChunk && npx rimraf ./.cache/WebpackModule && npx rimraf ./temp/* || true",
     "main": "deno task soft-cache-clear && deno task main-cached",
     "main-cached": "npx rimraf ./output.log && deno run --allow-net --allow-write --allow-sys --allow-read --allow-env src/main.ts",
     "test": "deno run --allow-net --allow-write --allow-sys --allow-read --allow-env src/test/test.ts"
   },
   "imports": {
-    "@std/assert": "jsr:@std/assert@1"
+    "@std/assert": "jsr:@std/assert@1",
+    "css-tree": "npm:css-tree@^3.1.0"
   }
 }

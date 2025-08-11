@@ -6,11 +6,12 @@ export const RefactorModuleInit: Transformation = {
   name: "RefactorModuleInit",
 
   canBeApplied: async (mod: WebpackModule): Promise<boolean> => {
-    if (!mod.moduleSourceFile) {
+    const sourceFile = mod.getSourceFileAST();
+    if (!sourceFile) {
       return false;
     }
-    const exportAssigns = mod.moduleSourceFile.getDescendantsOfKind(
-      SyntaxKind.ExportAssignment
+    const exportAssigns = sourceFile.getDescendantsOfKind(
+      SyntaxKind.ExportAssignment,
     );
     return (
       exportAssigns.length > 0 &&
@@ -23,11 +24,12 @@ export const RefactorModuleInit: Transformation = {
   },
 
   apply: async (mod: WebpackModule): Promise<boolean> => {
-    if (!mod.moduleSourceFile) {
+    const sourceFile = mod.getSourceFileAST();
+    if (!sourceFile) {
       return false;
     }
     // Refactor module init code to unique names
-    const moduleInitParameters = mod.moduleSourceFile
+    const moduleInitParameters = sourceFile
       .getDescendantsOfKind(SyntaxKind.ExportAssignment)[0]
       .getDescendantsOfKind(SyntaxKind.ArrowFunction)[0]
       .getParameters();
@@ -38,20 +40,20 @@ export const RefactorModuleInit: Transformation = {
 
     // Break module init out of init function
     if (
-      mod.moduleSourceFile.getDescendantsOfKind(SyntaxKind.ExportAssignment)
-        .length > 0
+      sourceFile.getDescendantsOfKind(SyntaxKind.ExportAssignment).length > 0
     ) {
-      mod.moduleSourceFile.replaceWithText(
-        mod.moduleSourceFile
+      sourceFile.replaceWithText(
+        sourceFile
           .getDescendantsOfKind(SyntaxKind.ExportAssignment)[0]
           .getDescendantsOfKind(SyntaxKind.ArrowFunction)[0]
           .getBody()
           .getChildren()[1]
           .getChildren()
           .map((child) => child.getText())
-          .join("\n")
+          .join("\n"),
       );
     }
+    mod.setCode(sourceFile.getFullText());
     return true;
   },
 };

@@ -16,11 +16,12 @@ export const ConvertJsonModule: Transformation = {
   },
 
   apply: async (mod: WebpackModule): Promise<boolean> => {
-    if (!mod.moduleSourceFile) {
+    const sourceFile = mod.getSourceFileAST();
+    if (!sourceFile) {
       return false;
     }
-    const binExps = mod.moduleSourceFile.getDescendantsOfKind(
-      SyntaxKind.BinaryExpression
+    const binExps = sourceFile.getDescendantsOfKind(
+      SyntaxKind.BinaryExpression,
     );
     if (binExps && binExps.length > 0) {
       for (const binExp of binExps) {
@@ -42,7 +43,7 @@ export const ConvertJsonModule: Transformation = {
           mod.currentLocation = path.join(
             path.dirname(mod.currentLocation),
             "assets",
-            `module-${mod.id}.json`
+            `module-${mod.id}.json`,
           );
           try {
             mod.setCode(JSON.stringify(JSON.parse(rawJson), null, 2));
@@ -52,6 +53,7 @@ export const ConvertJsonModule: Transformation = {
         }
       }
     }
+    mod.setCode(sourceFile.getFullText());
     return true;
   },
 };

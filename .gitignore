@@ -1,5 +1,7 @@
 /.cache
 /app
+/app_bak
 .DS_Store
 /src/test
 *.log
+/temp

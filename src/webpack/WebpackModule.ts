@@ -18,6 +18,9 @@ import { Logger } from "../Logger.ts";
 import { tryMkDirSync } from "../Utilities.ts";
 import chalk from "npm:chalk";
 import { UnfurlOptionalChain } from "./transformations/UnfurlOptionalChain.ts";
+import { Fingerprint } from "./Fingerprint.ts";
+import { IdentifyKnownImports } from "./transformations/IdentifyKnownImports.ts";
+import { CSSModuleTransformer } from "./transformations/CSSModuleTransformer.ts";
 
 export type ModuleType = "TSX" | "FILE";
 
@@ -25,27 +28,21 @@ export const ModuleTransformationChain: {
   suid: number;
   transformer: Transformation;
 }[] = [
+  { suid: 1, transformer: ReplaceDefaultSymbol },
   { suid: 1, transformer: RefactorModuleInit },
   { suid: 1, transformer: ExportsDecompile },
-  { suid: 1, transformer: ReplaceDefaultSymbol },
   { suid: 1, transformer: UnfurlOptionalChain },
   { suid: 1, transformer: ConvertToJSX },
-  // { suid: 1, transformer: AddHeaderComment },
+  // // { suid: 1, transformer: AddHeaderComment },
   { suid: 1, transformer: ConvertJsonModule },
   { suid: 1, transformer: ConvertFileModule },
+  { suid: 1, transformer: CSSModuleTransformer },
   { suid: 1, transformer: ImportsDecompile },
+  { suid: 1, transformer: IdentifyKnownImports },
 ];
 
 export class WebpackModule {
   public static modules: WebpackModule[] = [];
-  public static project: Project = new Project({
-    //
-    compilerOptions: {
-      jsx: 4,
-      allowJs: true,
-      resolveJsonModule: true,
-    },
-  });
 
   public static specialFunctions = {
     require: "$$_webpackRequire",
@@ -59,7 +56,6 @@ export class WebpackModule {
   public id: string;
   private code: string = "";
   public codeHash: string = "";
-  public moduleSourceFile: SourceFile | undefined;
   public transformations: string[] = [];
   public moduleType: ModuleType = "TSX";
 
@@ -69,10 +65,19 @@ export class WebpackModule {
     this.chunk = parent;
 
     WebpackModule.modules.push(this);
+
+    tryMkDirSync(path.join("temp", "chunk-" + this.chunk.id));
+    tryMkDirSync(
+      path.join("temp", "chunk-" + this.chunk.id, "module-" + this.id)
+    );
   }
 
   public setCode(code: string) {
     this.code = code;
+  }
+
+  public getCode() {
+    return this.code;
   }
 
   private async proccessInitialModule() {
@@ -80,29 +85,31 @@ export class WebpackModule {
       `chunk-${this.chunk.id}`,
       `module-${this.id}.tsx`
     );
-
-    let formattedCode = this.code;
-    try {
-      formattedCode = await formatCode(this.code);
-    } catch (e) {}
     this.codeHash = encodeHex(
-      await crypto.subtle.digest(
-        "SHA-256",
-        new TextEncoder().encode(formattedCode)
-      )
+      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(this.code))
     ).toUpperCase();
-    this.moduleSourceFile = WebpackModule.project.createSourceFile(
-      this.currentLocation,
-      formattedCode,
-      { overwrite: true }
-    );
   }
 
   public async runTransform(transform: Transformation) {
     try {
       // deno-lint-ignore no-this-alias
       const thisMod: WebpackModule = this;
+      const transformIndex =
+        ModuleTransformationChain.indexOf(
+          ModuleTransformationChain.find(
+            (trans) => trans.transformer.name === transform.name
+          )!
+        ) + 1;
       let wasCached = true;
+      Deno.writeTextFileSync(
+        path.join(
+          "temp",
+          "chunk-" + this.chunk.id,
+          "module-" + this.id,
+          `Step_${transformIndex}-${transform.name}.before`
+        ),
+        this.code
+      );
       const transformedCode = await Cache.get(
         {
           namespace: `Transformer-${transform.name}`,
@@ -120,9 +127,6 @@ export class WebpackModule {
             !thisMod.transformations.includes(transform.name)
           ) {
             await transform.apply(thisMod);
-            if (this.moduleType === "TSX") {
-              this.code = this.moduleSourceFile?.getFullText() ?? this.code;
-            }
           }
           return {
             code: thisMod.code,
@@ -133,11 +137,17 @@ export class WebpackModule {
       );
       this.transformations.push(transform.name);
       this.code = transformedCode.code;
-      if (this.moduleType === "TSX") {
-        this.moduleSourceFile?.replaceWithText(this.code);
-      }
       this.currentLocation = transformedCode.currentLocation;
       this.moduleType = transformedCode.moduleType;
+      Deno.writeTextFileSync(
+        path.join(
+          "temp",
+          "chunk-" + this.chunk.id,
+          "module-" + this.id,
+          `Step_${transformIndex}-${transform.name}.after`
+        ),
+        this.code
+      );
     } catch (e) {
       Logger.error(
         chalk.red(`[${transform.name}]`),
@@ -156,7 +166,7 @@ export class WebpackModule {
     const newModule = await Cache.get(
       {
         namespace: "WebpackModule",
-        id: await Cache.hash({ id, parent: parent.id, code }),
+        id: await Cache.hash({ id: id, parent: parent.id, code }),
       },
       async () => {
         isNewModule = true;
@@ -173,9 +183,27 @@ export class WebpackModule {
     }
   }
 
-  public bakeFile() {
+  public async bakeFile() {
     tryMkDirSync(path.dirname(path.join("app", this.currentLocation)));
-    Deno.writeTextFileSync(path.join("app", this.currentLocation), this.code);
+    Deno.writeTextFileSync(
+      path.join("app", this.currentLocation),
+      this.moduleType === "TSX" ? await formatCode(this.code) : this.code
+    );
+  }
+
+  public getSourceFileAST(): SourceFile {
+    const project = new Project({
+      //
+      compilerOptions: {
+        jsx: 4,
+        allowJs: true,
+        resolveJsonModule: true,
+      },
+    });
+
+    return project.createSourceFile(this.currentLocation, this.code, {
+      overwrite: true,
+    });
   }
 
   public static getModule(moduleId: string) {
@@ -183,11 +211,7 @@ export class WebpackModule {
   }
 
   public serialize(): object {
-    const {
-      chunk: _chunk,
-      moduleSourceFile: _moduleSourceFile,
-      ...rest
-    } = this;
+    const { chunk: _chunk, ...rest } = this;
     return {
       ...rest,
       parent: this.chunk.id,
