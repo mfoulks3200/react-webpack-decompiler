@@ -28,7 +28,7 @@ export class CSSChunk {
     this.remotePath = remotePath;
     this.remoteUrl = remoteUrl;
     this.currentLocation = path.join(
-      "app/css-modules",
+      "app/src/css-modules",
       this.id + ".module.css"
     );
     CSSChunk.chunks.push(this);
@@ -56,15 +56,15 @@ export class CSSChunk {
       (node, item, list) => node.type === "ClassSelector"
     ) as csstree.ClassSelector[];
     let code = this.code;
-    for (const classObj of classes) {
-      const assoc = CSSChunk.hashAssociation.find(
-        (assoc) => assoc.hashedName === classObj.name
-      );
-      if (assoc) {
-        Logger.log(`.${classObj.name}`, `.${assoc.originalName}`);
-        code = code.replaceAll(`.${classObj.name}`, `.${assoc.originalName}`);
-      }
-    }
+    // for (const classObj of classes) {
+    //   const assoc = CSSChunk.hashAssociation.find(
+    //     (assoc) => assoc.hashedName === classObj.name
+    //   );
+    //   if (assoc) {
+    //     Logger.log(`.${classObj.name}`, `.${assoc.originalName}`);
+    //     code = code.replaceAll(`.${classObj.name}`, `.${assoc.originalName}`);
+    //   }
+    // }
     Deno.writeTextFileSync(this.currentLocation, await formatCode(code, "css"));
   }
 

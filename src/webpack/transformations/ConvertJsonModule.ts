@@ -21,7 +21,7 @@ export const ConvertJsonModule: Transformation = {
       return false;
     }
     const binExps = sourceFile.getDescendantsOfKind(
-      SyntaxKind.BinaryExpression,
+      SyntaxKind.BinaryExpression
     );
     if (binExps && binExps.length > 0) {
       for (const binExp of binExps) {
@@ -41,9 +41,9 @@ export const ConvertJsonModule: Transformation = {
             .replaceAll("\\", "");
           mod.moduleType = "FILE";
           mod.currentLocation = path.join(
-            path.dirname(mod.currentLocation),
+            mod.chunk.name,
             "assets",
-            `module-${mod.id}.json`,
+            `${mod.name}.json`
           );
           try {
             mod.setCode(JSON.stringify(JSON.parse(rawJson), null, 2));

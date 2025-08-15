@@ -161,18 +161,19 @@ for (const transform of ModuleTransformationChain) {
   })();
 }
 
+const outputStats = true;
+
 // Bake project
 Logger.log(chalk.white(`🍰 Baking project`));
 await (async () => {
-  tryMkDirSync("app");
-  tryMkDirSync("app/css-modules");
+  tryMkDirSync("app/src/css-modules");
   for (const chunk of WebpackChunk.chunks) {
-    tryMkDirSync(path.join("app", `chunk-${chunk.id}`));
+    tryMkDirSync(path.join("app", "src", chunk.name));
   }
   const totalModules = WebpackModule.modules.length + CSSChunk.chunks.length;
   let i = 0;
   for (const mod of WebpackModule.modules) {
-    await mod.bakeFile();
+    await mod.bakeFile(outputStats);
     mpb.updateTask("Bake project", {
       percentage: i / totalModules,
       message: `[${i}/${totalModules}] Baking module ${mod.id} chunk ${mod.chunk.id}`,

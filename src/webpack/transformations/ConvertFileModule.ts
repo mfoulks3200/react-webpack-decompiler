@@ -36,12 +36,9 @@ export const ConvertFileModule: Transformation = {
             .slice(1, -1)
         );
         mod.currentLocation = path.join(
-          path.dirname(mod.currentLocation),
+          mod.chunk.name,
           "assets",
-          path
-            .basename(mod.currentLocation)
-            .slice(0, -1 * path.extname(mod.currentLocation).length) +
-            path.extname(fileUrl)
+          mod.name + path.extname(fileUrl)
         );
         mod.setCode(await fetchCode(fileUrl, true));
       }

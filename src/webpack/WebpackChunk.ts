@@ -13,6 +13,7 @@ export class WebpackChunk {
   public id: string;
   public remotePath: string;
   public remoteUrl: string;
+  public name: string;
   private code: string = "";
 
   public modules: WebpackModule[] = [];
@@ -21,6 +22,7 @@ export class WebpackChunk {
     this.id = id;
     this.remotePath = remotePath;
     this.remoteUrl = remoteUrl;
+    this.name = `chunk-${id}`;
 
     WebpackChunk.chunks.push(this);
   }

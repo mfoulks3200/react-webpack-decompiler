@@ -13,11 +13,22 @@ globalThis.addEventListener("unload", () => {
   );
 });
 
+export interface LoggerMessage {
+  renderedMessage: string;
+  sanitizedMessage: string;
+  timestamp: Date;
+  messageType: "info" | "error";
+}
+
+type LoggerEventHandler = (message: LoggerMessage) => void;
+
 export class Logger {
   public static messageStats = {
     info: 0,
     error: 0,
   };
+
+  public static eventListeners: LoggerEventHandler[] = [];
 
   private static renderMessage(...message: any) {
     const renderedMessage = [];
@@ -64,11 +75,20 @@ export class Logger {
     ];
     console.log(...renderedMessage, ...message);
 
-    renderedMessage.push(Logger.renderMessage(...message));
-    fs.appendFileSync(
-      "output.log",
-      Logger.sanitizeString(renderedMessage.join(" ") + "\n")
+    const sanitizedMessage = Logger.sanitizeString(
+      renderedMessage.join(" ") + "\n"
     );
+    const renderedColorMessage = Logger.renderMessage(...message);
+    renderedMessage.push(renderedColorMessage);
+    for (const handler of Logger.eventListeners) {
+      handler({
+        renderedMessage: [...renderedMessage, renderedColorMessage].join(" "),
+        sanitizedMessage: sanitizedMessage,
+        timestamp: new Date(),
+        messageType: "info",
+      });
+    }
+    fs.appendFileSync("output.log", sanitizedMessage);
     Logger.messageStats.info++;
   }
 
@@ -80,11 +100,30 @@ export class Logger {
     ];
     console.error(...renderedMessage, ...message);
 
-    renderedMessage.push(Logger.renderMessage(...message));
-    fs.appendFileSync(
-      "output.log",
-      Logger.sanitizeString(renderedMessage.join(" ") + "\n")
+    const sanitizedMessage = Logger.sanitizeString(
+      renderedMessage.join(" ") + "\n"
     );
+    const renderedColorMessage = Logger.renderMessage(...message);
+    renderedMessage.push(renderedColorMessage);
+    for (const handler of Logger.eventListeners) {
+      handler({
+        renderedMessage: [...renderedMessage, renderedColorMessage].join(" "),
+        sanitizedMessage: sanitizedMessage,
+        timestamp: new Date(),
+        messageType: "error",
+      });
+    }
+    fs.appendFileSync("output.log", sanitizedMessage);
     Logger.messageStats.error++;
+  }
+
+  public static addEventListener(handler: LoggerEventHandler) {
+    Logger.eventListeners.push(handler);
+  }
+
+  public static removeEventListener(handler: LoggerEventHandler) {
+    Logger.eventListeners = Logger.eventListeners.filter(
+      (existing) => existing !== handler
+    );
   }
 }

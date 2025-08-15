@@ -36,7 +36,7 @@ export const ImportsDecompile: Transformation = {
               const modPath = [];
               if (modLookup.chunk.id !== mod.chunk.id) {
                 modPath.push("..");
-                modPath.push(`chunk-${modLookup.chunk.id}`);
+                modPath.push(modLookup.chunk.name);
               } else {
                 modPath.push("./");
               }

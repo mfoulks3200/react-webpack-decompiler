@@ -4,7 +4,10 @@ import { encodeHex } from "jsr:@std/encoding/hex";
 import { Project, SourceFile } from "npm:ts-morph";
 import { formatCode } from "../Prettier.ts";
 import { Cache } from "../Cache.ts";
-import { Transformation } from "./transformations/Transformation.ts";
+import {
+  Transformation,
+  TransformationResult,
+} from "./transformations/Transformation.ts";
 import { ExportsDecompile } from "./transformations/ExportsDecompile.ts";
 import { ConvertToJSX } from "./transformations/ConvertToJSX.ts";
 import { AddHeaderComment } from "./transformations/AddHeaderComment.ts";
@@ -14,8 +17,12 @@ import { ConvertFileModule } from "./transformations/ConvertFileModule.ts";
 import { ImportsDecompile } from "./transformations/ImportsDecompile.ts";
 import { RefactorModuleInit } from "./transformations/RefactorModuleInit.ts";
 import { ReplaceDefaultSymbol } from "./transformations/ReplaceDefaultSymbol.ts";
-import { Logger } from "../Logger.ts";
-import { tryMkDirSync } from "../Utilities.ts";
+import { Logger, LoggerMessage } from "../Logger.ts";
+import {
+  camelize,
+  tryMkDirSync,
+  writeUnsureTextFileSync,
+} from "../Utilities.ts";
 import chalk from "npm:chalk";
 import { UnfurlOptionalChain } from "./transformations/UnfurlOptionalChain.ts";
 import { Fingerprint } from "./Fingerprint.ts";
@@ -54,22 +61,20 @@ export class WebpackModule {
   public chunk: WebpackChunk;
   public currentLocation: string = "";
   public id: string;
+  public name: string;
   private code: string = "";
   public codeHash: string = "";
   public transformations: string[] = [];
+  private transformationLog: TransformationResult[] = [];
   public moduleType: ModuleType = "TSX";
 
   private constructor(id: string, parent: WebpackChunk, code: string) {
     this.id = id;
     this.code = code;
     this.chunk = parent;
+    this.name = `module-${id}`;
 
     WebpackModule.modules.push(this);
-
-    tryMkDirSync(path.join("temp", "chunk-" + this.chunk.id));
-    tryMkDirSync(
-      path.join("temp", "chunk-" + this.chunk.id, "module-" + this.id)
-    );
   }
 
   public setCode(code: string) {
@@ -81,80 +86,73 @@ export class WebpackModule {
   }
 
   private async proccessInitialModule() {
-    this.currentLocation = path.join(
-      `chunk-${this.chunk.id}`,
-      `module-${this.id}.tsx`
-    );
+    this.currentLocation = path.join(this.chunk.name, `${this.name}.tsx`);
     this.codeHash = encodeHex(
       await crypto.subtle.digest("SHA-256", new TextEncoder().encode(this.code))
     ).toUpperCase();
   }
 
   public async runTransform(transform: Transformation) {
+    const thisTransformation: TransformationResult = {
+      name: transform.name,
+      state: "success",
+      wasCached: true,
+      durationMs: Date.now(),
+      beforeCode: this.code,
+      afterCode: "",
+      logMessages: [],
+    };
+    const logHandler = (message: LoggerMessage) => {
+      thisTransformation.logMessages.push(message);
+    };
+    Logger.addEventListener(logHandler);
     try {
-      // deno-lint-ignore no-this-alias
-      const thisMod: WebpackModule = this;
-      const transformIndex =
-        ModuleTransformationChain.indexOf(
-          ModuleTransformationChain.find(
-            (trans) => trans.transformer.name === transform.name
-          )!
-        ) + 1;
-      let wasCached = true;
-      Deno.writeTextFileSync(
-        path.join(
-          "temp",
-          "chunk-" + this.chunk.id,
-          "module-" + this.id,
-          `Step_${transformIndex}-${transform.name}.before`
-        ),
-        this.code
-      );
-      const transformedCode = await Cache.get(
-        {
-          namespace: `Transformer-${transform.name}`,
-          id: await Cache.hash({
-            id: this.id,
-            chunk: this.chunk.id,
-            name: transform.name,
-            beforeCode: this.code,
-          }),
-        },
-        async () => {
-          wasCached = false;
-          if (
-            (await transform.canBeApplied(thisMod)) &&
-            !thisMod.transformations.includes(transform.name)
-          ) {
+      if (
+        (await transform.canBeApplied(this)) &&
+        !this.transformations.includes(transform.name)
+      ) {
+        // deno-lint-ignore no-this-alias
+        const thisMod: WebpackModule = this;
+        const transformedCode = await Cache.get(
+          {
+            namespace: `Transformer-${transform.name}`,
+            id: await Cache.hash({
+              id: this.id,
+              chunk: this.chunk.id,
+              name: transform.name,
+              beforeCode: this.code,
+            }),
+          },
+          async () => {
+            thisTransformation.wasCached = false;
             await transform.apply(thisMod);
+            return {
+              code: thisMod.code,
+              currentLocation: thisMod.currentLocation,
+              moduleType: thisMod.moduleType,
+            };
           }
-          return {
-            code: thisMod.code,
-            currentLocation: thisMod.currentLocation,
-            moduleType: thisMod.moduleType,
-          };
-        }
-      );
-      this.transformations.push(transform.name);
-      this.code = transformedCode.code;
-      this.currentLocation = transformedCode.currentLocation;
-      this.moduleType = transformedCode.moduleType;
-      Deno.writeTextFileSync(
-        path.join(
-          "temp",
-          "chunk-" + this.chunk.id,
-          "module-" + this.id,
-          `Step_${transformIndex}-${transform.name}.after`
-        ),
-        this.code
-      );
+        );
+        this.transformations.push(transform.name);
+        this.code = transformedCode.code;
+        this.currentLocation = transformedCode.currentLocation;
+        this.moduleType = transformedCode.moduleType;
+      } else {
+        thisTransformation.state = "skipped";
+      }
     } catch (e) {
       Logger.error(
         chalk.red(`[${transform.name}]`),
         `Failed transformation ${transform.name} on module ${this.id} chunk ${this.chunk.id}`,
         e
       );
+      thisTransformation.state = "error";
     }
+
+    thisTransformation.durationMs = Date.now() - thisTransformation.durationMs;
+    thisTransformation.afterCode = this.code;
+    this.transformationLog.push(thisTransformation);
+    Logger.removeEventListener(logHandler);
   }
 
   public static async registerModule(
@@ -183,12 +181,82 @@ export class WebpackModule {
     }
   }
 
-  public async bakeFile() {
-    tryMkDirSync(path.dirname(path.join("app", this.currentLocation)));
-    Deno.writeTextFileSync(
-      path.join("app", this.currentLocation),
+  public async bakeFile(outputStats?: boolean) {
+    writeUnsureTextFileSync(
+      path.join("app", "src", this.currentLocation),
       this.moduleType === "TSX" ? await formatCode(this.code) : this.code
     );
+    //Output stats
+    if (outputStats) {
+      const statsDir = path.join(".stats", this.chunk.name, this.name);
+
+      const modManifest: any = {
+        module: {
+          id: this.id,
+          name: this.name,
+        },
+        chunk: {
+          id: this.chunk.id,
+          name: this.chunk.name,
+          remotePath: this.chunk.remotePath,
+          remoteUrl: this.chunk.remoteUrl,
+        },
+        transforms: [],
+      };
+
+      let i = 0;
+      for (const transform of this.transformationLog) {
+        const transformManifest = {
+          name: transform.name,
+          files: {
+            beforeCode: path.join(
+              statsDir,
+              "transforms",
+              `${i}_` + camelize(transform.name),
+              "before.code"
+            ),
+            afterCode: path.join(
+              statsDir,
+              "transforms",
+              `${i}_` + camelize(transform.name),
+              "after.code"
+            ),
+            consoleLog: path.join(
+              statsDir,
+              "transforms",
+              `${i}_` + camelize(transform.name),
+              "console.log"
+            ),
+          },
+          duration: transform.durationMs,
+          state: transform.state,
+          wasCached: transform.wasCached,
+          errorCount: transform.logMessages.filter(
+            (message) => message.messageType === "error"
+          ).length,
+        };
+        writeUnsureTextFileSync(
+          path.join("app", transformManifest.files.beforeCode),
+          transform.beforeCode
+        );
+        writeUnsureTextFileSync(
+          path.join("app", transformManifest.files.afterCode),
+          transform.afterCode
+        );
+        writeUnsureTextFileSync(
+          path.join("app", transformManifest.files.consoleLog),
+          transform.logMessages
+            .map((message) => message.renderedMessage)
+            .join("\n")
+        );
+        modManifest.transforms.push(transformManifest);
+        i++;
+      }
+      writeUnsureTextFileSync(
+        path.join("app", statsDir, "manifest.json"),
+        JSON.stringify(modManifest, null, 2)
+      );
+    }
   }
 
   public getSourceFileAST(): SourceFile {
